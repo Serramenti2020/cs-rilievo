@@ -435,30 +435,89 @@ async function openUfficioDetail(id){
 function openCommessa(id){
   if(curMode==='ufficio'){ openUfficioDetail(id); return; }
   curCommessa=id; const c=LOCAL.commesse[id]; const phases=c.phases||{};
-  document.getElementById('cd-hdr').innerHTML=`<div><div class="cd-name">📋 ${c.nome}</div><div class="cd-meta">${c.prev} · ${c.citta}</div></div>`;
+  document.getElementById('cd-hdr').innerHTML=`<div><div class="cd-name">📋 ${c.nome}</div><div class="cd-meta">${c.prev||'—'} · ${c.citta||'—'}</div></div>`;
   let piHtml='';
   if(c.piantina&&c.piType==='img') piHtml=`<div class="sec" style="margin-top:16px">Piantina</div><div class="piantina-wrap" style="margin-bottom:16px"><img src="${c.piantina}" style="width:100%;max-height:200px;object-fit:contain;display:block;background:#111"></div>`;
   document.getElementById('cd-piantina').innerHTML=piHtml;
   let html='<div class="sec">Fasi di Rilievo</div>';
-  Object.entries(phases).forEach(([fase,ph])=>{
-    const allI=Object.values(ph.items||{}).flatMap(i=>i); const doneI=allI.filter(i=>i.done).length;
-    const statusLbl={todo:'Da avviare',wip:'In corso',done:'Completata',ordered:'Ordinata'}[ph.status]||ph.status;
-    const statusCls={todo:'ph-todo',wip:'ph-wip',done:'ph-done',ordered:'ph-ordered'}[ph.status]||'ph-todo';
-    let btns=''; if(ph.status==='todo') btns=`<button class="btn-fase btn-avvia" onclick="avviaFase('${id}','${fase}')">Avvia →</button>`; else if(ph.status==='wip') btns=`<button class="btn-fase btn-riprendi" onclick="apriFase('${id}','${fase}')">Riprendi →</button>`; else if(ph.status==='done') btns=`<button class="btn-fase btn-riprendi" style="font-size:11px" onclick="apriFase('${id}','${fase}')">Modifica</button><button class="btn-fase btn-ordina" onclick="segnaOrdinata('${id}','${fase}')">Ordinata ✓</button>`; else if(ph.status==='ordered') btns=`<span style="font-size:11px;color:var(--gr);font-weight:700">✅ Ordinata</span>`;
-    html+=`<div class="phase-card"><div class="phase-card-hdr" onclick="togglePhaseCard('pc_${fase}')"><div class="phase-card-title"><span style="color:${getFaseColor(fase)};font-size:16px">■</span>${getFaseLabel(fase)}<span class="phase-pill ${statusCls}">${statusLbl}</span></div><div class="phase-card-actions"><span style="font-size:11px;color:var(--mu);margin-right:6px">${doneI}/${allI.length}</span>${btns}</div></div><div class="phase-card-body" id="pc_${fase}">${Object.entries(ph.items||{}).map(([pos,items])=>`<div class="pos-row"><span class="pos-name">📍 ${pos}</span><div style="display:flex;align-items:center;gap:8px"><div class="prog-bar"><div class="prog-fill" style="width:${items.length?Math.round(items.filter(i=>i.done).length/items.length*100):0}%"></div></div><span style="font-size:11px;color:var(--mu)">${items.filter(i=>i.done).length}/${items.length}</span></div></div>`).join('')}</div></div>`;
+
+  const phaseEntries=Object.entries(phases);
+  if(!phaseEntries.length){
+    html+=`<div style="padding:24px;text-align:center;color:var(--mu);border:1px dashed var(--ln)">
+      Nessuna fase trovata. Prova a eliminare questa commessa e ricrearla caricando l'abaco Excel.
+    </div>`;
+  }
+
+  phaseEntries.forEach(([fase,ph])=>{
+    // Normalizza items: accetta sia array che oggetto
+    const itemsObj = ph.items || {};
+    const allI = Object.values(itemsObj).flatMap(v => Array.isArray(v) ? v : [v]);
+    const doneI = allI.filter(i=>i&&i.done).length;
+    const total = allI.length;
+    const status = ph.status || 'todo';
+    const statusLbl={todo:'Da avviare',wip:'In corso',done:'Completata',ordered:'Ordinata'}[status]||status;
+    const statusCls={todo:'ph-todo',wip:'ph-wip',done:'ph-done',ordered:'ph-ordered'}[status]||'ph-todo';
+
+    let btns='';
+    if(status==='todo') btns=`<button class="btn-fase btn-avvia" onclick="avviaFase('${id}','${fase}')">Avvia →</button>`;
+    else if(status==='wip') btns=`<button class="btn-fase btn-riprendi" onclick="apriFase('${id}','${fase}')">Riprendi →</button>`;
+    else if(status==='done') btns=`<button class="btn-fase btn-riprendi" style="font-size:11px" onclick="apriFase('${id}','${fase}')">Modifica</button><button class="btn-fase btn-ordina" onclick="segnaOrdinata('${id}','${fase}')">Ordinata ✓</button>`;
+    else if(status==='ordered') btns=`<span style="font-size:11px;color:var(--gr);font-weight:700">✅ Ordinata</span>`;
+
+    const posRows=Object.entries(itemsObj).map(([pos,items])=>{
+      const arr=Array.isArray(items)?items:[items];
+      const d=arr.filter(i=>i&&i.done).length;
+      const t=arr.length;
+      const pct=t?Math.round((d/t)*100):0;
+      return `<div class="pos-row"><span class="pos-name">📍 ${pos}</span><div style="display:flex;align-items:center;gap:8px"><div class="prog-bar"><div class="prog-fill" style="width:${pct}%"></div></div><span style="font-size:11px;color:var(--mu)">${d}/${t}</span></div></div>`;
+    }).join('');
+
+    html+=`<div class="phase-card">
+      <div class="phase-card-hdr" onclick="togglePhaseCard('pc_${fase}')">
+        <div class="phase-card-title">
+          <span style="color:${getFaseColor(fase)};font-size:16px">■</span>
+          ${getFaseLabel(fase)}
+          <span class="phase-pill ${statusCls}">${statusLbl}</span>
+        </div>
+        <div class="phase-card-actions">
+          <span style="font-size:11px;color:var(--mu);margin-right:6px">${doneI}/${total}</span>
+          ${btns}
+        </div>
+      </div>
+      <div class="phase-card-body" id="pc_${fase}">${posRows}</div>
+    </div>`;
   });
   document.getElementById('cd-phases').innerHTML=html;
   show('s-detail');
 }
 
 function togglePhaseCard(id){ document.getElementById(id).classList.toggle('open'); }
-function avviaFase(cid,fase){ LOCAL.commesse[cid].phases[fase].status='wip'; saveLocal(); syncToCloud('updateItem',{commessaId:cid,fase,posizione:'_meta',itemIdx:0,fields:{status:'wip'}}); apriFase(cid,fase); }
+function avviaFase(cid,fase){
+  LOCAL.commesse[cid].phases[fase].status='wip';
+  saveLocal();
+  syncToCloud('updateItem',{commessaId:cid,fase,posizione:'_meta',itemIdx:0,fields:{status:'wip'}});
+  apriFase(cid,fase);
+}
 function segnaOrdinata(cid,fase){ LOCAL.commesse[cid].phases[fase].status='ordered'; saveLocal(); syncToCloud('updateItem',{commessaId:cid,fase,posizione:'_meta',itemIdx:0,fields:{status:'ordered'}}); showToast('Fase segnata come Ordinata ✓'); openCommessa(cid); }
 
 // FASE RILIEVO
 function apriFase(cid,fase){
   curCommessa=cid; curFase=fase; activeCanvases={};
-  const c=LOCAL.commesse[cid]; const ph=c.phases[fase]; const posNames=Object.keys(ph.items||{});
+  const c=LOCAL.commesse[cid]; const ph=c.phases[fase];
+
+  // Normalizza items: garantisce che ogni posizione sia un array
+  const rawItems = ph.items || {};
+  const posNames = Object.keys(rawItems);
+  posNames.forEach(pos => {
+    if(!Array.isArray(rawItems[pos])) rawItems[pos] = [rawItems[pos]];
+    rawItems[pos].forEach(item => {
+      if(!item.misure) item.misure = {};
+      if(!item.foto) item.foto = [];
+      if(!item.done) item.done = false;
+    });
+  });
+  ph.items = rawItems;
+  saveLocal();
   let html=`<div class="fase-topbar" style="background:${getFaseColor(fase)}"><div style="font-size:10px;opacity:.7;font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:.1em">${c.nome} · ${c.prev}</div><div style="font-size:18px;font-weight:700;margin-top:4px">■ ${getFaseLabel(fase)}</div></div>`;
   if(c.piantina&&c.piType==='img'){ html+=`<div class="sec">Piantina</div><div class="pin-bar"><span style="font-size:11px">📍 Seleziona posizione e tocca la mappa:</span><select id="pin-pos-sel"><option value="">— Posizione —</option>${posNames.map(p=>`<option value="${p}">${p}</option>`).join('')}</select></div><div class="piantina-wrap" id="piantina-fase"><img src="${c.piantina}" id="piantina-img" style="width:100%;display:block"><div id="pins-layer" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none"></div></div>`; }
   html+=`<div class="sec">Schede di Rilievo</div>`;
